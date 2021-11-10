@@ -1,27 +1,32 @@
-# Stage 1: Compile and Build angular codebase
-
-# Use official node image as the base image
+# Stage 1, build app and generate static assets
 FROM node:latest as build
 
-# Set the working directory
-WORKDIR /usr/local/app
+#create build directory
+WORKDIR /app
 
-# Add the source code to app
-COPY ./ /usr/local/app/
+# Copy over package*.json so that we can install dependencies before we copy across source code.
+# this allows us to cache the node_modules dependencies layer to speed up future builds.
+# When the app source code is updated, only the app source is rebuild and we don't pull
+# all the dependencies again. The depenencies layer will only be updated when package*.json is updated
+COPY package*.json /app/
 
-# Install all the dependencies
+# install dependencies
 RUN npm install
 
-# Generate the build of the application
-RUN npm run build
+# copy over app source
+COPY ./ /app/
 
-# Stage 2: Serve app with nginx server
+# default configuration is production but this can be overridden with a build param
+ARG configuration=production
 
-# Use official nginx image as the base image
+# build app static assets and output to /dist/out
+RUN npm run build -- --output-path=./dist/out --configuration $configuration
+
+# Stage 2 uses nginx base image and copies in static assets from build stage above
 FROM nginx:latest
 
-# Copy the build output to replace the default nginx contents.
-COPY --from=build /usr/local/app/dist/hello-world /usr/share/nginx/html
+# copy static assets to nginx
+COPY --from=build /app/dist/out/ /usr/share/nginx/html
 
-# Expose port 80
-EXPOSE 80
+# Copy over the custom nginx config file
+COPY --from=build /app/nginx-custom.conf /etc/nginx/conf.d/default.conf
